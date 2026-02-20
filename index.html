@@ -211,7 +211,7 @@ textarea{min-height:100px;resize:vertical;line-height:1.6;}
 <div class="score-panel">
   <div>
     <div class="sc-lbl">Case Strength Meter</div>
-    <div class="sc-num" id="scoreDisplay">20%</div>
+    <div class="sc-num" id="scoreDisplay">0%</div>
   </div>
   <div class="sc-bar-wrap">
     <div class="sc-bar" id="scoreBar"></div>
@@ -334,8 +334,8 @@ textarea{min-height:100px;resize:vertical;line-height:1.6;}
       <div class="fld" id="f-priorclaim">
         <label class="lbl">Prior Disability Claim Filed?</label>
         <div class="choice-group horiz" role="radiogroup">
-          <label class="choice-card horiz"><input type="radio" name="priorclaim" value="NO" onchange="sel(this);toggleDenial()"><div class="choice-lbl">No</div></label>
-          <label class="choice-card horiz"><input type="radio" name="priorclaim" value="YES" onchange="sel(this);toggleDenial()"><div class="choice-lbl">Yes</div></label>
+          <label class="choice-card horiz"><input type="radio" name="priorclaim" value="NO" onchange="sel(this);toggleDenial();updateScore()"><div class="choice-lbl">No</div></label>
+          <label class="choice-card horiz"><input type="radio" name="priorclaim" value="YES" onchange="sel(this);toggleDenial();updateScore()"><div class="choice-lbl">Yes</div></label>
         </div>
         <div class="err">Please answer</div>
       </div>
@@ -343,9 +343,9 @@ textarea{min-height:100px;resize:vertical;line-height:1.6;}
       <div class="fld" id="f-denial" style="display:none">
         <label class="lbl">Have a Denial Letter?</label>
         <div class="choice-group horiz" role="radiogroup">
-          <label class="choice-card horiz"><input type="radio" name="denial" value="YES" onchange="sel(this)"><div class="choice-lbl">Yes</div></label>
-          <label class="choice-card horiz"><input type="radio" name="denial" value="NO" onchange="sel(this)"><div class="choice-lbl">No</div></label>
-          <label class="choice-card horiz"><input type="radio" name="denial" value="N/A" onchange="sel(this)"><div class="choice-lbl">N/A</div></label>
+          <label class="choice-card horiz"><input type="radio" name="denial" value="YES" onchange="sel(this);updateScore()"><div class="choice-lbl">Yes</div></label>
+          <label class="choice-card horiz"><input type="radio" name="denial" value="NO" onchange="sel(this);updateScore()"><div class="choice-lbl">No</div></label>
+          <label class="choice-card horiz"><input type="radio" name="denial" value="N/A" onchange="sel(this);updateScore()"><div class="choice-lbl">N/A</div></label>
         </div>
         <div class="err">Please answer</div>
       </div>
@@ -363,7 +363,7 @@ textarea{min-height:100px;resize:vertical;line-height:1.6;}
 
       <div class="fld" id="f-sittime">
         <label class="lbl" for="sittime">Max Sit Time Before Discomfort</label>
-        <select id="sittime">
+        <select id="sittime" onchange="updateScore()">
           <option value="">Select limit...</option>
           <option value="10 Minutes Or Less">10 Minutes Or Less</option>
           <option value="15 Minutes Or Less">15 Minutes Or Less</option>
@@ -376,7 +376,7 @@ textarea{min-height:100px;resize:vertical;line-height:1.6;}
 
       <div class="fld" id="f-standtime">
         <label class="lbl" for="standtime">Max Stand Time Before Discomfort</label>
-        <select id="standtime">
+        <select id="standtime" onchange="updateScore()">
           <option value="">Select limit...</option>
           <option value="10 Minutes Or Less">10 Minutes Or Less</option>
           <option value="15 Minutes Or Less">15 Minutes Or Less</option>
@@ -389,7 +389,7 @@ textarea{min-height:100px;resize:vertical;line-height:1.6;}
 
       <div class="fld" id="f-liftweight">
         <label class="lbl" for="liftweight">Maximum Lifting Capacity</label>
-        <select id="liftweight">
+        <select id="liftweight" onchange="updateScore()">
           <option value="">Select weight range...</option>
           <option value="Less than 10 lbs">Less than 10 lbs — Sedentary RFC</option>
           <option value="10-25 lbs">10–25 lbs — Light Work RFC</option>
@@ -518,22 +518,88 @@ function toggleDenial(){
 }
 
 // SCORE
+// ── SCORE MIRROR — exact same 7-factor algorithm as Apps Script scoreCase() ──
+// Any change here must also be made in DisabilityScoring_FIXED_AppsScript.js
 function updateScore(){
-  let s=20;
-  const age=parseInt(document.getElementById('age').value)||0;
-  const earn=document.querySelector('input[name="oversga"]:checked')?.value||'NO';
-  const cond=document.getElementById('condition').value.toLowerCase();
-  const blind=document.getElementById('isBlind').value;
-  if(age>=60) s+=30; else if(age>=55) s+=25; else if(age>=50) s+=18;
-  if(earn==='NO') s+=30;
-  if(cond.includes('back')||cond.includes('ptsd')||cond.includes('spinal')||
-     cond.includes('heart')||cond.includes('cancer')||blind==='YES') s+=20;
-  const final=Math.min(s,100);
-  document.getElementById('scoreDisplay').textContent=final+'%';
-  const bar=document.getElementById('scoreBar');
-  bar.style.width=final+'%';
-  bar.style.background=final<50?'#ef4444':final<80?'#f59e0b':'#10b981';
-  bar.style.boxShadow=final<50?'0 0 12px rgba(239,68,68,.5)':final<80?'0 0 12px rgba(245,158,11,.5)':'0 0 12px rgba(16,185,129,.5)';
+  let s = 0;
+
+  // ── FACTOR 1: AGE (max 20 pts) — mirrors Apps Script exactly ──────────────
+  const age = parseInt(document.getElementById('age').value) || 0;
+  if      (age >= 60) s += 20;
+  else if (age >= 55) s += 17;
+  else if (age >= 50) s += 13;
+  else if (age >= 45) s += 8;
+  else if (age >= 35) s += 4;
+  else if (age > 0)   s += 1;
+
+  // ── FACTOR 2: WORK STATUS (max 25 pts) ───────────────────────────────────
+  const work    = document.querySelector('input[name="workstatus"]:checked')?.value?.toLowerCase() || '';
+  const overSGA = document.querySelector('input[name="oversga"]:checked')?.value || 'NO';
+  if (work.includes('unemployed') || work.includes('not working')) {
+    s += 25;
+  } else if (work.includes('self')) {
+    s += (overSGA === 'YES') ? 5 : 15;
+  } else if (work.includes('part')) {
+    s += (overSGA === 'YES') ? 5 : 18;
+  } else if (work.includes('full')) {
+    s += 0;
+  } else {
+    s += 10; // not yet answered — benefit of doubt
+  }
+
+  // ── FACTOR 3: PRIOR CLAIM + DENIAL (max 20 pts) ──────────────────────────
+  const prior  = document.querySelector('input[name="priorclaim"]:checked')?.value || '';
+  const denial = document.querySelector('input[name="denial"]:checked')?.value    || '';
+  if (prior === 'YES') {
+    s += (denial === 'YES') ? 20 : 12;
+  } else {
+    s += 8; // no prior claim — initial stage, still gets base points
+  }
+
+  // ── FACTOR 4: SIT TIME (max 10 pts) ──────────────────────────────────────
+  const sit = (document.getElementById('sittime')?.value || '').toLowerCase();
+  if      (sit.includes('10')) s += 10;
+  else if (sit.includes('15')) s += 8;
+  else if (sit.includes('30')) s += 5;
+  else if (sit.includes('1 hour') || sit.includes('1hr')) s += 2;
+  else if (sit.includes('2 hour') || sit.includes('2hr')) s += 0;
+  else if (sit !== '')         s += 3;
+
+  // ── FACTOR 5: STAND TIME (max 10 pts) ────────────────────────────────────
+  const stand = (document.getElementById('standtime')?.value || '').toLowerCase();
+  if      (stand.includes('10')) s += 10;
+  else if (stand.includes('15')) s += 8;
+  else if (stand.includes('30')) s += 5;
+  else if (stand.includes('1 hour') || stand.includes('1hr')) s += 2;
+  else if (stand.includes('2 hour') || stand.includes('2hr')) s += 0;
+  else if (stand !== '')          s += 3;
+
+  // ── FACTOR 6: LIFT WEIGHT (max 10 pts) ───────────────────────────────────
+  const lift = (document.getElementById('liftweight')?.value || '').toLowerCase();
+  if      (lift.includes('less than 10') || lift.includes('< 10')) s += 10;
+  else if (lift.includes('10-25') || lift.includes('10–25'))       s += 7;
+  else if (lift.includes('25-50') || lift.includes('25–50'))       s += 3;
+  else if (lift.includes('50+'))                                   s += 0;
+  else if (lift !== '')                                            s += 5;
+
+  // ── FACTOR 7: CONDITION SEVERITY BONUS (max 5 pts) ───────────────────────
+  const cond = document.getElementById('condition')?.value?.toLowerCase() || '';
+  const blind = document.getElementById('isBlind')?.value || 'NO';
+  const highValue = ['cancer','heart','seizure','stroke','parkinson','multiple sclerosis',
+    'ms','als','hiv','aids','end stage','transplant','spinal','spine','fusion',
+    'neuropathy','ptsd','schizophrenia','bipolar','chronic pain','surgery','back'];
+  if (highValue.some(c => cond.includes(c)) || blind === 'YES') s += 5;
+
+  // ── FINAL ─────────────────────────────────────────────────────────────────
+  const final = Math.min(Math.round(s), 100);
+  document.getElementById('scoreDisplay').textContent = final + '%';
+  const bar = document.getElementById('scoreBar');
+  bar.style.width      = final + '%';
+  bar.style.background = final < 50 ? '#ef4444' : final < 80 ? '#f59e0b' : '#10b981';
+  bar.style.boxShadow  = final < 50
+    ? '0 0 12px rgba(239,68,68,.5)'
+    : final < 80 ? '0 0 12px rgba(245,158,11,.5)'
+    : '0 0 12px rgba(16,185,129,.5)';
 }
 
 // VALIDATE
