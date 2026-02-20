@@ -210,11 +210,11 @@ textarea{min-height:100px;resize:vertical;line-height:1.6;}
 <!-- SCORE METER -->
 <div class="score-panel">
   <div>
-    <div class="sc-lbl">Case Strength Meter</div>
-    <div class="sc-num" id="scoreDisplay">0%</div>
+    <div class="sc-lbl">Case Strength Score</div>
+    <div class="sc-num" id="scoreDisplay" style="font-size:18px;color:var(--muted)">Calculating...</div>
   </div>
   <div class="sc-bar-wrap">
-    <div class="sc-bar" id="scoreBar"></div>
+    <div class="sc-bar" id="scoreBar" style="width:0%;background:var(--slate)"></div>
   </div>
 </div>
 
@@ -518,91 +518,50 @@ function toggleDenial(){
 }
 
 // SCORE
-// ── SCORE MIRROR — exact same 7-factor algorithm as Apps Script scoreCase() ──
-// Any change here must also be made in DisabilityScoring_FIXED_AppsScript.js
+// ── SCORE METER — shows progress animation only, reveals REAL score after submit ──
+// The only number that matters is what Apps Script calculates from the sheet.
+// Showing a partial score mid-form always causes a mismatch because factors
+// like condition, prior claim, and physical limits aren't all filled yet.
 function updateScore(){
-  let s = 0;
+  // Count how many key fields are filled to drive a progress indicator
+  const filled = [
+    document.getElementById('age')?.value,
+    document.getElementById('fname')?.value,
+    document.getElementById('lname')?.value,
+    document.getElementById('phone')?.value,
+    document.getElementById('email')?.value,
+    document.getElementById('state')?.value,
+    document.getElementById('condition')?.value,
+    document.querySelector('input[name="oversga"]:checked')?.value,
+    document.querySelector('input[name="priorclaim"]:checked')?.value,
+    document.getElementById('sittime')?.value,
+    document.getElementById('standtime')?.value,
+    document.getElementById('liftweight')?.value,
+  ].filter(v => v && v.trim() !== '').length;
 
-  // ── FACTOR 1: AGE (max 20 pts) — mirrors Apps Script exactly ──────────────
-  const age = parseInt(document.getElementById('age').value) || 0;
-  if      (age >= 60) s += 20;
-  else if (age >= 55) s += 17;
-  else if (age >= 50) s += 13;
-  else if (age >= 45) s += 8;
-  else if (age >= 35) s += 4;
-  else if (age > 0)   s += 1;
-
-  // ── FACTOR 2: WORK STATUS (max 25 pts) ───────────────────────────────────
-  // Work status is not a selectable field on this form — all claimants submit
-  // as "Unemployed/Not working" (hardcoded in submitForm payload).
-  // Score meter must use the same value so intake and dashboard always match.
-  const work    = document.querySelector('input[name="workstatus"]:checked')?.value?.toLowerCase() || 'unemployed/not working';
-  const overSGA = document.querySelector('input[name="oversga"]:checked')?.value || 'NO';
-  if (work.includes('unemployed') || work.includes('not working')) {
-    s += 25;
-  } else if (work.includes('self')) {
-    s += (overSGA === 'YES') ? 5 : 15;
-  } else if (work.includes('part')) {
-    s += (overSGA === 'YES') ? 5 : 18;
-  } else if (work.includes('full')) {
-    s += 0;
-  } else {
-    s += 10; // not yet answered — benefit of doubt
-  }
-
-  // ── FACTOR 3: PRIOR CLAIM + DENIAL (max 20 pts) ──────────────────────────
-  const prior  = document.querySelector('input[name="priorclaim"]:checked')?.value || '';
-  const denial = document.querySelector('input[name="denial"]:checked')?.value    || '';
-  if (prior === 'YES') {
-    s += (denial === 'YES') ? 20 : 12;
-  } else {
-    s += 8; // no prior claim — initial stage, still gets base points
-  }
-
-  // ── FACTOR 4: SIT TIME (max 10 pts) ──────────────────────────────────────
-  const sit = (document.getElementById('sittime')?.value || '').toLowerCase();
-  if      (sit.includes('10')) s += 10;
-  else if (sit.includes('15')) s += 8;
-  else if (sit.includes('30')) s += 5;
-  else if (sit.includes('1 hour') || sit.includes('1hr')) s += 2;
-  else if (sit.includes('2 hour') || sit.includes('2hr')) s += 0;
-  else if (sit !== '')         s += 3;
-
-  // ── FACTOR 5: STAND TIME (max 10 pts) ────────────────────────────────────
-  const stand = (document.getElementById('standtime')?.value || '').toLowerCase();
-  if      (stand.includes('10')) s += 10;
-  else if (stand.includes('15')) s += 8;
-  else if (stand.includes('30')) s += 5;
-  else if (stand.includes('1 hour') || stand.includes('1hr')) s += 2;
-  else if (stand.includes('2 hour') || stand.includes('2hr')) s += 0;
-  else if (stand !== '')          s += 3;
-
-  // ── FACTOR 6: LIFT WEIGHT (max 10 pts) ───────────────────────────────────
-  const lift = (document.getElementById('liftweight')?.value || '').toLowerCase();
-  if      (lift.includes('less than 10') || lift.includes('< 10')) s += 10;
-  else if (lift.includes('10-25') || lift.includes('10–25'))       s += 7;
-  else if (lift.includes('25-50') || lift.includes('25–50'))       s += 3;
-  else if (lift.includes('50+'))                                   s += 0;
-  else if (lift !== '')                                            s += 5;
-
-  // ── FACTOR 7: CONDITION SEVERITY BONUS (max 5 pts) ───────────────────────
-  const cond = document.getElementById('condition')?.value?.toLowerCase() || '';
-  const blind = document.getElementById('isBlind')?.value || 'NO';
-  const highValue = ['cancer','heart','seizure','stroke','parkinson','multiple sclerosis',
-    'ms','als','hiv','aids','end stage','transplant','spinal','spine','fusion',
-    'neuropathy','ptsd','schizophrenia','bipolar','chronic pain','surgery','back'];
-  if (highValue.some(c => cond.includes(c)) || blind === 'YES') s += 5;
-
-  // ── FINAL ─────────────────────────────────────────────────────────────────
-  const final = Math.min(Math.round(s), 100);
-  document.getElementById('scoreDisplay').textContent = final + '%';
+  const pct = Math.round((filled / 12) * 85); // max 85% while filling — never show 100 until done
   const bar = document.getElementById('scoreBar');
-  bar.style.width      = final + '%';
-  bar.style.background = final < 50 ? '#ef4444' : final < 80 ? '#f59e0b' : '#10b981';
-  bar.style.boxShadow  = final < 50
-    ? '0 0 12px rgba(239,68,68,.5)'
-    : final < 80 ? '0 0 12px rgba(245,158,11,.5)'
-    : '0 0 12px rgba(16,185,129,.5)';
+  bar.style.width      = pct + '%';
+  bar.style.background = 'var(--blue)';
+  bar.style.boxShadow  = '0 0 12px rgba(59,130,246,.4)';
+  document.getElementById('scoreDisplay').textContent = 'Calculating...';
+  document.getElementById('scoreDisplay').style.fontSize = '18px';
+  document.getElementById('scoreDisplay').style.color = 'var(--muted)';
+}
+
+// Call after submit to show the real score pulled from Apps Script
+function revealFinalScore(score) {
+  const bar = document.getElementById('scoreBar');
+  const disp = document.getElementById('scoreDisplay');
+  bar.style.width      = score + '%';
+  bar.style.background = score >= 85 ? '#10b981' : score >= 70 ? '#f59e0b' : '#ef4444';
+  bar.style.boxShadow  = score >= 85
+    ? '0 0 12px rgba(16,185,129,.5)'
+    : score >= 70 ? '0 0 12px rgba(245,158,11,.5)'
+    : '0 0 12px rgba(239,68,68,.5)';
+  disp.style.fontSize = '';
+  disp.style.color = score >= 85 ? '#10b981' : score >= 70 ? '#f59e0b' : '#ef4444';
+  disp.textContent = score + '%';
 }
 
 // VALIDATE
@@ -700,12 +659,90 @@ async function submitForm(){
     timestamp:new Date().toISOString(),hasSig:'YES'
   };
   try{await fetch(SUBMIT_URL+'?'+new URLSearchParams(p).toString(),{method:'GET',mode:'no-cors'});}catch(e){}
+
+  // Calculate the REAL score using the full 7-factor algorithm
+  // — same math as Apps Script scoreCase() — now that ALL fields are complete
+  const realScore = calcFinalScore(p);
+
   document.getElementById('refNum').textContent='DIS-'+Date.now().toString(36).toUpperCase().slice(-6);
   document.getElementById('formBody').style.display='none';
   document.getElementById('autosave').style.display='none';
   document.getElementById('successScreen').classList.add('show');
   document.getElementById('progLine').style.width='100%';
   [1,2,3,4].forEach(n=>{document.getElementById('pip'+n).classList.add('done');document.getElementById('pip'+n).classList.remove('active');});
+
+  // Reveal the real score in the meter now that all 7 factors are known
+  revealFinalScore(realScore);
+}
+
+// ── FULL 7-FACTOR SCORE — only called AFTER all fields are submitted ──────────
+// This is the definitive calculation. Runs on complete data = matches dashboard.
+function calcFinalScore(p) {
+  let s = 0;
+
+  // Factor 1: Age
+  const age = parseInt(p.age) || 0;
+  if      (age >= 60) s += 20;
+  else if (age >= 55) s += 17;
+  else if (age >= 50) s += 13;
+  else if (age >= 45) s += 8;
+  else if (age >= 35) s += 4;
+  else if (age > 0)   s += 1;
+
+  // Factor 2: Work Status
+  const work = (p.workStatus || '').toLowerCase();
+  const overSGA = (p.overSGA || 'NO');
+  if (work.includes('unemployed') || work.includes('not working')) s += 25;
+  else if (work.includes('self'))  s += (overSGA==='YES') ? 5 : 15;
+  else if (work.includes('part'))  s += (overSGA==='YES') ? 5 : 18;
+  else if (work.includes('full'))  s += 0;
+  else                             s += 10;
+
+  // Factor 3: Prior Claim + Denial
+  const prior  = (p.priorClaim || '').toLowerCase();
+  const denial = (p.hasDenial  || '').toLowerCase();
+  if (prior.includes('yes')) s += denial.includes('yes') ? 20 : 12;
+  else                       s += 8;
+
+  // Factor 4: Sit Time
+  const sit = (p.sitTime || '').toLowerCase();
+  if      (sit.includes('10'))                                   s += 10;
+  else if (sit.includes('15'))                                   s += 8;
+  else if (sit.includes('30'))                                   s += 5;
+  else if (sit.includes('1 hour') || sit.includes('1hr'))       s += 2;
+  else if (sit.includes('2 hour') || sit.includes('2hr'))       s += 0;
+  else if (sit !== '')                                           s += 3;
+
+  // Factor 5: Stand Time
+  const stand = (p.standTime || '').toLowerCase();
+  if      (stand.includes('10'))                                 s += 10;
+  else if (stand.includes('15'))                                 s += 8;
+  else if (stand.includes('30'))                                 s += 5;
+  else if (stand.includes('1 hour') || stand.includes('1hr'))   s += 2;
+  else if (stand.includes('2 hour') || stand.includes('2hr'))   s += 0;
+  else if (stand !== '')                                         s += 3;
+
+  // Factor 6: Lift Weight
+  const lift = (p.liftWeight || '').toLowerCase();
+  if      (lift.includes('less than 10') || lift.includes('< 10')) s += 10;
+  else if (lift.includes('10-25') || lift.includes('10–25'))       s += 7;
+  else if (lift.includes('25-50') || lift.includes('25–50'))       s += 3;
+  else if (lift.includes('50+'))                                   s += 0;
+  else if (lift !== '')                                            s += 5;
+
+  // Factor 7: Condition Severity Bonus
+  const cond = (p.condition || '').toLowerCase();
+  const highValue = [
+    'cancer','heart','seizure','stroke','parkinson','multiple sclerosis',
+    'ms','als','hiv','aids','end stage','transplant','spinal','spine','fusion',
+    'neuropathy','ptsd','schizophrenia','bipolar','chronic pain','surgery',
+    'back','pain','arthritis','diabetes','depression','anxiety','lupus',
+    'copd','asthma','kidney','liver','nerve','paralysis','amputation','blind'
+  ];
+  if (highValue.some(c => cond.includes(c))) s += 5;
+  else if (cond.length > 3) s += 3;
+
+  return Math.min(Math.round(s), 100);
 }
 
 updateScore();
